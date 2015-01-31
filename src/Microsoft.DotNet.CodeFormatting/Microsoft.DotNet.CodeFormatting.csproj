@@ -71,6 +71,8 @@
     <Reference Include="System.Xml" />
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="Analyzers\ExplicitThisAnalyzer.cs" />
+    <Compile Include="Analyzers\ExplicitThisFixer.cs" />
     <Compile Include="Filters\FilenameFilter.cs" />
     <Compile Include="Filters\UsableFileFilter.cs" />
     <Compile Include="FormattingEngine.cs" />
