@@ -8,6 +8,8 @@ using System.ComponentModel.Composition;
 using System.Collections.Generic;
 using Microsoft.DotNet.CodeFormatting.Rules;
 using Microsoft.DotNet.CodeFormatting.Filters;
+using Microsoft.CodeAnalysis.Diagnostics;
+using Microsoft.CodeAnalysis.CodeFixes;
 
 namespace Microsoft.DotNet.CodeFormatting
 {
@@ -23,10 +25,7 @@ namespace Microsoft.DotNet.CodeFormatting
             var filteredCatalog = new FilteredCatalog(catalog, cpd =>
             {
                 if (cpd.ExportDefinitions.Any(em =>
-                    em.ContractName == AttributedModelServices.GetContractName(typeof(ISyntaxFormattingRule)) ||
-                    em.ContractName == AttributedModelServices.GetContractName(typeof(ILocalSemanticFormattingRule)) ||
-                    em.ContractName == AttributedModelServices.GetContractName(typeof(IGlobalSemanticFormattingRule)) ||
-                    em.ContractName == AttributedModelServices.GetContractName(typeof(IFormattingFilter))))
+                    em.ContractName == AttributedModelServices.GetContractName(typeof(DiagnosticAnalyzer))))
                 {
                     object ruleType;
                     if (cpd.Metadata.TryGetValue(RuleTypeConstants.PartMetadataKey, out ruleType))

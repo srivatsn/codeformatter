@@ -13,8 +13,11 @@ using System.Threading;
 using System.Threading.Tasks;
 
 using Microsoft.CodeAnalysis;
+using Microsoft.CodeAnalysis.Diagnostics;
 using Microsoft.CodeAnalysis.Text;
 using Microsoft.CodeAnalysis.CSharp;
+using Microsoft.CodeAnalysis.CodeFixes;
+using Microsoft.CodeAnalysis.CodeActions;
 
 namespace Microsoft.DotNet.CodeFormatting
 {
@@ -25,10 +28,10 @@ namespace Microsoft.DotNet.CodeFormatting
 
         private readonly Options _options;
         private readonly IEnumerable<IFormattingFilter> _filters;
-        private readonly IEnumerable<ISyntaxFormattingRule> _syntaxRules;
-        private readonly IEnumerable<ILocalSemanticFormattingRule> _localSemanticRules;
-        private readonly IEnumerable<IGlobalSemanticFormattingRule> _globalSemanticRules;
+        private readonly IEnumerable<DiagnosticAnalyzer> _analyzers;
+        private readonly IEnumerable<CodeFixProvider> _fixers;
         private readonly Stopwatch _watch = new Stopwatch();
+        private readonly ImmutableDictionary<string, CodeFixProvider> _fixerMap;
 
         public ImmutableArray<string> CopyrightHeader
         {
@@ -52,44 +55,113 @@ namespace Microsoft.DotNet.CodeFormatting
         internal FormattingEngineImplementation(
             Options options,
             [ImportMany] IEnumerable<IFormattingFilter> filters,
-            [ImportMany] IEnumerable<Lazy<ISyntaxFormattingRule, IOrderMetadata>> syntaxRules,
-            [ImportMany] IEnumerable<Lazy<ILocalSemanticFormattingRule, IOrderMetadata>> localSemanticRules,
-            [ImportMany] IEnumerable<Lazy<IGlobalSemanticFormattingRule, IOrderMetadata>> globalSemanticRules)
+            [ImportMany] IEnumerable<DiagnosticAnalyzer> analyzers,
+            [ImportMany] IEnumerable<CodeFixProvider> fixers)
         {
             _options = options;
             _filters = filters;
-            _syntaxRules = syntaxRules.OrderBy(r => r.Metadata.Order).Select(r => r.Value).ToList();
-            _localSemanticRules = localSemanticRules.OrderBy(r => r.Metadata.Order).Select(r => r.Value).ToList();
-            _globalSemanticRules = globalSemanticRules.OrderBy(r => r.Metadata.Order).Select(r => r.Value).ToList();
+            _analyzers = analyzers;
+            _fixers = fixers;
+
+            var fixerMap = ImmutableDictionary.CreateBuilder<string, CodeFixProvider>();
+
+            foreach (var fixer in _fixers)
+            {
+                var supportedDiagnosticIds = fixer.GetFixableDiagnosticIds();
+
+                foreach (var id in supportedDiagnosticIds)
+                {
+                    fixerMap.Add(id, fixer);
+                }
+            }
+            _fixerMap = fixerMap.ToImmutable();
         }
 
-        public Task FormatSolutionAsync(Solution solution, CancellationToken cancellationToken)
+        public async Task FormatSolutionAsync(Solution solution, CancellationToken cancellationToken)
         {
-            var documentIds = solution.Projects.SelectMany(x => x.DocumentIds).ToList();
-            return FormatAsync(solution.Workspace, documentIds, cancellationToken);
+            foreach (var project in solution.Projects)
+            {
+                await FormatProjectAsync(project, cancellationToken);
+            }
         }
 
-        public Task FormatProjectAsync(Project project, CancellationToken cancellationToken)
+        private FixAllContext CreateFixAllContext(
+            Project project,
+            CodeFixProvider codeFixProvider,
+            FixAllScope scope,
+            string codeActionId,
+            IEnumerable<string> diagnosticIds,
+            Func<Document, ImmutableHashSet<string>, CancellationToken, Task<IEnumerable<Diagnostic>>> getDocumentDiagnosticsAsync,
+            Func<Project, bool, ImmutableHashSet<string>, CancellationToken, Task<IEnumerable<Diagnostic>>> getProjectDiagnosticsAsync,
+            CancellationToken cancellationToken)
         {
-            return FormatAsync(project.Solution.Workspace, project.DocumentIds, cancellationToken);
+            var ctor = typeof(FixAllContext).GetConstructors()[1];
+
+            return (FixAllContext) ctor.Invoke(new object[] { project, codeFixProvider, scope, codeActionId, diagnosticIds, getDocumentDiagnosticsAsync, getProjectDiagnosticsAsync, cancellationToken});
         }
 
-        private async Task FormatAsync(Workspace workspace, IReadOnlyList<DocumentId> documentIds, CancellationToken cancellationToken)
+        public async Task FormatProjectAsync(Project project, CancellationToken cancellationToken)
         {
             var watch = new Stopwatch();
             watch.Start();
 
-            var originalSolution = workspace.CurrentSolution;
-            var solution = await FormatCoreAsync(originalSolution, documentIds, cancellationToken);
+            var solution = AddTablePreprocessorSymbol(project.Solution);
+            project = solution.GetProject(project.Id);
+            var diagnostics = await GetDiagnostics(project, cancellationToken);
 
-            watch.Stop();
-
-            if (!workspace.TryApplyChanges(solution))
+            var batchFixer = WellKnownFixAllProviders.BatchFixer;
+            var context = CreateFixAllContext(project,
+                                              new UberCodeFixer(_fixerMap),
+                                              FixAllScope.Project, 
+                                              null, 
+                                              diagnostics.Select(d=>d.Id),
+                                              (doc, dids, ct) => Task.FromResult(diagnostics.Where(d => d.Location.SourceTree.FilePath == doc.FilePath)),
+                                              (p, all, dids, ct) => Task.FromResult(diagnostics.AsEnumerable()),
+                                              cancellationToken);
+            var fix = await batchFixer.GetFixAsync(context);
+            foreach (var operation in await fix.GetOperationsAsync(cancellationToken))
             {
-                FormatLogger.WriteErrorLine("Unable to save changes to disk");
+                operation.Apply(project.Solution.Workspace, cancellationToken);
             }
 
+            watch.Stop();
             FormatLogger.WriteLine("Total time {0}", watch.Elapsed);
+        }
+
+        class UberCodeFixer : CodeFixProvider
+        {
+            private ImmutableDictionary<string, CodeFixProvider> _fixerMap;
+            
+            public UberCodeFixer(ImmutableDictionary<string, CodeFixProvider> fixerMap)
+            {
+                _fixerMap = fixerMap;
+            }
+
+            public override async Task ComputeFixesAsync(CodeFixContext context)
+            {
+                foreach (var diagnostic in context.Diagnostics)
+                {
+                    var fixer = _fixerMap[diagnostic.Id];
+                    await fixer.ComputeFixesAsync(new CodeFixContext(context.Document, diagnostic, (a, d) => context.RegisterFix(a, d), context.CancellationToken));
+                }
+            }
+
+            public override FixAllProvider GetFixAllProvider()
+            {
+                return null;
+            }
+
+            public override ImmutableArray<string> GetFixableDiagnosticIds()
+            {
+                return ImmutableArray<string>.Empty;
+            }
+        }
+
+        private async Task<ImmutableArray<Diagnostic>> GetDiagnostics(Project project, CancellationToken cancellationToken)
+        {
+            var compilation = await project.GetCompilationAsync(cancellationToken);
+            var driver = AnalyzerDriver.Create(compilation, _analyzers.ToImmutableArray(), null, out compilation, cancellationToken);
+            return await driver.GetDiagnosticsAsync();
         }
 
         internal Solution AddTablePreprocessorSymbol(Solution solution)
@@ -112,16 +184,6 @@ namespace Microsoft.DotNet.CodeFormatting
             return solution;
         }
 
-        internal async Task<Solution> FormatCoreAsync(Solution originalSolution, IReadOnlyList<DocumentId> documentIds, CancellationToken cancellationToken)
-        {
-            var solution = originalSolution;
-            solution = AddTablePreprocessorSymbol(originalSolution);
-            solution = await RunSyntaxPass(solution, documentIds, cancellationToken);
-            solution = await RunLocalSemanticPass(solution, documentIds, cancellationToken);
-            solution = await RunGlobalSemanticPass(solution, documentIds, cancellationToken);
-            return solution;
-        }
-
         private bool ShouldBeProcessed(Document document)
         {
             foreach (var filter in _filters)
@@ -134,16 +196,6 @@ namespace Microsoft.DotNet.CodeFormatting
             return true;
         }
 
-        private Task<SyntaxNode> GetSyntaxRootAndFilter(Document document, CancellationToken cancellationToken)
-        {
-            if (!ShouldBeProcessed(document))
-            {
-                return Task.FromResult<SyntaxNode>(null);
-            }
-
-            return document.GetSyntaxRootAsync(cancellationToken);
-        }
-
         private void StartDocument()
         {
             _watch.Restart();
@@ -153,117 +205,6 @@ namespace Microsoft.DotNet.CodeFormatting
         {
             _watch.Stop();
             FormatLogger.WriteLine("    {0} {1} seconds", document.Name, _watch.Elapsed.TotalSeconds);
-        }
-
-        /// <summary>
-        /// Semantics is not involved in this pass at all.  It is just a straight modification of the 
-        /// parse tree so there are no issues about ensuring the version of <see cref="SemanticModel"/> and
-        /// the <see cref="SyntaxNode"/> line up.  Hence we do this by iteraning every <see cref="Document"/> 
-        /// and processing all rules against them at once 
-        /// </summary>
-        private async Task<Solution> RunSyntaxPass(Solution originalSolution, IReadOnlyList<DocumentId> documentIds, CancellationToken cancellationToken)
-        {
-            FormatLogger.WriteLine("Syntax Pass");
-
-            var currentSolution = originalSolution;
-            foreach (var documentId in documentIds)
-            {
-                var document = originalSolution.GetDocument(documentId);
-                var syntaxRoot = await GetSyntaxRootAndFilter(document, cancellationToken);
-                if (syntaxRoot == null)
-                {
-                    continue;
-                }
-
-                StartDocument();
-                var newRoot = RunSyntaxPass(syntaxRoot);
-                EndDocument(document);
-
-                if (newRoot != syntaxRoot)
-                {
-                    currentSolution = currentSolution.WithDocumentSyntaxRoot(document.Id, newRoot);
-                }
-            }
-
-            return currentSolution;
-        }
-
-        private SyntaxNode RunSyntaxPass(SyntaxNode root)
-        {
-            foreach (var rule in _syntaxRules)
-            {
-                root = rule.Process(root);
-            }
-
-            return root;
-        }
-
-        private async Task<Solution> RunLocalSemanticPass(Solution solution, IReadOnlyList<DocumentId> documentIds, CancellationToken cancellationToken)
-        {
-            FormatLogger.WriteLine("Local Semantic Pass");
-            foreach (var localSemanticRule in _localSemanticRules)
-            {
-                solution = await RunLocalSemanticPass(solution, documentIds, localSemanticRule, cancellationToken);
-            }
-
-            return solution;
-        }
-
-        private async Task<Solution> RunLocalSemanticPass(Solution originalSolution, IReadOnlyList<DocumentId> documentIds, ILocalSemanticFormattingRule localSemanticRule, CancellationToken cancellationToken)
-        {
-            FormatLogger.WriteLine("  {0}", localSemanticRule.GetType().Name);
-            var currentSolution = originalSolution;
-            foreach (var documentId in documentIds)
-            {
-                var document = originalSolution.GetDocument(documentId);
-                var syntaxRoot = await GetSyntaxRootAndFilter(document, cancellationToken);
-                if (syntaxRoot == null)
-                {
-                    continue;
-                }
-
-                StartDocument();
-                var newRoot = await localSemanticRule.ProcessAsync(document, syntaxRoot, cancellationToken);
-                EndDocument(document);
-
-                if (syntaxRoot != newRoot)
-                {
-                    currentSolution = currentSolution.WithDocumentSyntaxRoot(documentId, newRoot);
-                }
-            }
-
-            return currentSolution;
-        }
-
-        private async Task<Solution> RunGlobalSemanticPass(Solution solution, IReadOnlyList<DocumentId> documentIds, CancellationToken cancellationToken)
-        {
-            FormatLogger.WriteLine("Global Semantic Pass");
-            foreach (var globalSemanticRule in _globalSemanticRules)
-            {
-                solution = await RunGlobalSemanticPass(solution, documentIds, globalSemanticRule, cancellationToken);
-            }
-
-            return solution;
-        }
-
-        private async Task<Solution> RunGlobalSemanticPass(Solution solution, IReadOnlyList<DocumentId> documentIds, IGlobalSemanticFormattingRule globalSemanticRule, CancellationToken cancellationToken)
-        {
-            FormatLogger.WriteLine("  {0}", globalSemanticRule.GetType().Name);
-            foreach (var documentId in documentIds)
-            {
-                var document = solution.GetDocument(documentId);
-                var syntaxRoot = await GetSyntaxRootAndFilter(document, cancellationToken);
-                if (syntaxRoot == null)
-                {
-                    continue;
-                }
-
-                StartDocument();
-                solution = await globalSemanticRule.ProcessAsync(document, syntaxRoot, cancellationToken);
-                EndDocument(document);
-            }
-
-            return solution;
         }
     }
 }

@@ -1,4 +1,5 @@
 ﻿using System.Collections.Immutable;
+using System.ComponentModel.Composition;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
@@ -7,6 +8,7 @@ using Microsoft.CodeAnalysis.Diagnostics;
 
 namespace Microsoft.DotNet.CodeFormatting.Analyzers
 {
+    [Export(typeof(DiagnosticAnalyzer))]
     [DiagnosticAnalyzer(LanguageNames.CSharp)]
     public class ExplicitThisAnalyzer : DiagnosticAnalyzer
     {
