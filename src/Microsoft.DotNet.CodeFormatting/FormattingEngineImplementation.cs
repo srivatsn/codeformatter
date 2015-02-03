@@ -4,7 +4,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.ComponentModel.Composition;
+using System.Composition;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
@@ -18,6 +18,7 @@ using Microsoft.CodeAnalysis.Text;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CodeFixes;
 using Microsoft.CodeAnalysis.CodeActions;
+using System.Reflection;
 
 namespace Microsoft.DotNet.CodeFormatting
 {
@@ -52,7 +53,7 @@ namespace Microsoft.DotNet.CodeFormatting
         }
 
         [ImportingConstructor]
-        internal FormattingEngineImplementation(
+        public FormattingEngineImplementation(
             Options options,
             [ImportMany] IEnumerable<IFormattingFilter> filters,
             [ImportMany] IEnumerable<DiagnosticAnalyzer> analyzers,
@@ -91,13 +92,12 @@ namespace Microsoft.DotNet.CodeFormatting
             FixAllScope scope,
             string codeActionId,
             IEnumerable<string> diagnosticIds,
-            Func<Document, ImmutableHashSet<string>, CancellationToken, Task<IEnumerable<Diagnostic>>> getDocumentDiagnosticsAsync,
-            Func<Project, bool, ImmutableHashSet<string>, CancellationToken, Task<IEnumerable<Diagnostic>>> getProjectDiagnosticsAsync,
+            Func<Project, Document, ImmutableHashSet<string>, CancellationToken, Task<IEnumerable<Diagnostic>>> getDocumentDiagnosticsAsync,
             CancellationToken cancellationToken)
         {
-            var ctor = typeof(FixAllContext).GetConstructors()[1];
+            var ctor = typeof(FixAllContext).GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)[0];
 
-            return (FixAllContext) ctor.Invoke(new object[] { project, codeFixProvider, scope, codeActionId, diagnosticIds, getDocumentDiagnosticsAsync, getProjectDiagnosticsAsync, cancellationToken});
+            return (FixAllContext) ctor.Invoke(new object[] { project.Documents.First(), codeFixProvider, scope, codeActionId, diagnosticIds, getDocumentDiagnosticsAsync, cancellationToken});
         }
 
         public async Task FormatProjectAsync(Project project, CancellationToken cancellationToken)
@@ -110,13 +110,16 @@ namespace Microsoft.DotNet.CodeFormatting
             var diagnostics = await GetDiagnostics(project, cancellationToken);
 
             var batchFixer = WellKnownFixAllProviders.BatchFixer;
+
             var context = CreateFixAllContext(project,
                                               new UberCodeFixer(_fixerMap),
                                               FixAllScope.Project, 
                                               null, 
                                               diagnostics.Select(d=>d.Id),
-                                              (doc, dids, ct) => Task.FromResult(diagnostics.Where(d => d.Location.SourceTree.FilePath == doc.FilePath)),
-                                              (p, all, dids, ct) => Task.FromResult(diagnostics.AsEnumerable()),
+                                              (projcet, doc, dids, ct) =>
+                                              {
+                                                  return Task.FromResult(diagnostics.Where(d => d.Location.SourceTree.FilePath == doc.FilePath));
+                                              },
                                               cancellationToken);
             var fix = await batchFixer.GetFixAsync(context);
             foreach (var operation in await fix.GetOperationsAsync(cancellationToken))
@@ -161,6 +164,7 @@ namespace Microsoft.DotNet.CodeFormatting
         {
             var compilation = await project.GetCompilationAsync(cancellationToken);
             var driver = AnalyzerDriver.Create(compilation, _analyzers.ToImmutableArray(), null, out compilation, cancellationToken);
+            compilation.GetDiagnostics(cancellationToken);
             return await driver.GetDiagnosticsAsync();
         }
 

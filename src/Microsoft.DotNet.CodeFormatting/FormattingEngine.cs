@@ -1,15 +1,9 @@
 // Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
-using System.Linq;
-using System.ComponentModel.Composition.Hosting;
-using System.ComponentModel.Composition;
 using System.Collections.Generic;
-using Microsoft.DotNet.CodeFormatting.Rules;
-using Microsoft.DotNet.CodeFormatting.Filters;
-using Microsoft.CodeAnalysis.Diagnostics;
-using Microsoft.CodeAnalysis.CodeFixes;
+using System.Composition.Hosting;
+using System.Reflection;
 
 namespace Microsoft.DotNet.CodeFormatting
 {
@@ -17,48 +11,53 @@ namespace Microsoft.DotNet.CodeFormatting
     {
         public static IFormattingEngine Create(IEnumerable<string> ruleTypes, IEnumerable<string> filenames)
         {
-            var catalog = new AssemblyCatalog(typeof(FormattingEngine).Assembly);
+            var configuration = new ContainerConfiguration()
+                        .WithAssembly(typeof(FormattingEngine).GetTypeInfo().Assembly);
 
-            var ruleTypesHash = new HashSet<string>(ruleTypes, StringComparer.InvariantCultureIgnoreCase);
-            var notFoundRuleTypes = new HashSet<string>(ruleTypes, StringComparer.InvariantCultureIgnoreCase);
+            //var catalog = new AssemblyCatalog(typeof(FormattingEngine).Assembly);
 
-            var filteredCatalog = new FilteredCatalog(catalog, cpd =>
-            {
-                if (cpd.ExportDefinitions.Any(em =>
-                    em.ContractName == AttributedModelServices.GetContractName(typeof(DiagnosticAnalyzer))))
-                {
-                    object ruleType;
-                    if (cpd.Metadata.TryGetValue(RuleTypeConstants.PartMetadataKey, out ruleType))
-                    {
-                        if (ruleType is string)
-                        {
-                            notFoundRuleTypes.Remove((string)ruleType);
-                            if (!ruleTypesHash.Contains((string)ruleType))
-                            {
-                                return false;
-                            }
-                        }
-                    }
-                }
+            //var ruleTypesHash = new HashSet<string>(ruleTypes, StringComparer.InvariantCultureIgnoreCase);
+            //var notFoundRuleTypes = new HashSet<string>(ruleTypes, StringComparer.InvariantCultureIgnoreCase);
 
-                return true;
-            });
+            //var filteredCatalog = new FilteredCatalog(catalog, cpd =>
+            //{
+            //    if (cpd.ExportDefinitions.Any(em =>
+            //        em.ContractName == AttributedModelServices.GetContractName(typeof(DiagnosticAnalyzer))))
+            //    {
+            //        object ruleType;
+            //        if (cpd.Metadata.TryGetValue(RuleTypeConstants.PartMetadataKey, out ruleType))
+            //        {
+            //            if (ruleType is string)
+            //            {
+            //                notFoundRuleTypes.Remove((string)ruleType);
+            //                if (!ruleTypesHash.Contains((string)ruleType))
+            //                {
+            //                    return false;
+            //                }
+            //            }
+            //        }
+            //    }
 
-            var container = new CompositionContainer(filteredCatalog);
+            //    return true;
+            //});
 
-            if (filenames.Any())
-            {
-                container.ComposeExportedValue<IFormattingFilter>(new FilenameFilter(filenames));
-            }
+            //var container = new CompositionContainer(filteredCatalog);
 
-            var engine = container.GetExportedValue<IFormattingEngine>();
+            var container = configuration.CreateContainer();
+
+            //if (filenames.Any())
+            //{
+            //    container.ComposeExportedValue<IFormattingFilter>(new FilenameFilter(filenames));
+            //}
+
+            var engine = container.GetExport<IFormattingEngine>();
             var consoleFormatLogger = new ConsoleFormatLogger();
 
             //  Need to do this after the catalog is queried, otherwise the lambda won't have been run
-            foreach (var notFoundRuleType in notFoundRuleTypes)
-            {
-                consoleFormatLogger.WriteErrorLine("The specified rule type was not found: {0}", notFoundRuleType);
-            }
+            //foreach (var notFoundRuleType in notFoundRuleTypes)
+            //{
+            //    consoleFormatLogger.WriteErrorLine("The specified rule type was not found: {0}", notFoundRuleType);
+            //}
 
             return engine;
         }

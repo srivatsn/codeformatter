@@ -1,5 +1,5 @@
 ﻿using System.Collections.Immutable;
-using System.ComponentModel.Composition;
+using System.Composition;
 using System.Threading;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;

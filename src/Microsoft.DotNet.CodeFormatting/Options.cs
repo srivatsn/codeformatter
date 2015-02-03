@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
-using System.ComponentModel.Composition;
+using System.Composition;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -25,7 +25,7 @@ namespace Microsoft.DotNet.CodeFormatting
         internal IFormatLogger FormatLogger { get; set; }
 
         [ImportingConstructor]
-        internal Options()
+        public Options()
         {
             CopyrightHeader = ImmutableArray.Create(s_defaultCopyrightHeader);
             PreprocessorConfigurations = ImmutableArray<string[]>.Empty;

@@ -13,6 +13,7 @@ using Microsoft.CodeAnalysis.Simplification;
 
 namespace Microsoft.DotNet.CodeFormatting.Analyzers
 {
+    [ExportCodeFixProvider(LanguageNames.CSharp)]
     public class ExplicitThisFixer : CodeFixProvider
     {
         public override async Task ComputeFixesAsync(CodeFixContext context)
@@ -22,7 +23,7 @@ namespace Microsoft.DotNet.CodeFormatting.Analyzers
 
             Debug.Assert(memberAccessNode is MemberAccessExpressionSyntax);
 
-            var newDocument = context.Document.WithSyntaxRoot(root.ReplaceNode(root, memberAccessNode.WithAdditionalAnnotations(Simplifier.Annotation)));
+            var newDocument = context.Document.WithSyntaxRoot(root.ReplaceNode(memberAccessNode, memberAccessNode.WithAdditionalAnnotations(Simplifier.Annotation)));
             context.RegisterFix(CodeAction.Create("Remove 'this' qualifier", newDocument), context.Diagnostics.First());
         }
 
