@@ -9,7 +9,7 @@ namespace Microsoft.DotNet.CodeFormatting
 {
     public static class FormattingEngine
     {
-        public static IFormattingEngine Create(IEnumerable<string> ruleTypes, IEnumerable<string> filenames)
+        public static IFormattingEngine Create(ImmutableArray<string> ruleTypes)
         {
             var configuration = new ContainerConfiguration()
                         .WithAssembly(typeof(FormattingEngine).GetTypeInfo().Assembly);

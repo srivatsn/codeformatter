@@ -56,7 +56,7 @@
     </Reference>
     <Reference Include="System" />
     <Reference Include="System.Collections.Immutable, Version=1.1.32.0, Culture=neutral, PublicKeyToken=b03f5f7f11d50a3a, processorArchitecture=MSIL">
-      <SpecificVersion>False</SpecificVersion>
+      <Private>true</Private>
       <HintPath>..\packages\System.Collections.Immutable.1.1.32-beta\lib\portable-net45+win8+wp8+wpa81\System.Collections.Immutable.dll</HintPath>
     </Reference>
     <Reference Include="System.ComponentModel.Composition" />
@@ -88,15 +88,17 @@
   <ItemGroup>
     <Compile Include="Analyzers\ExplicitThisAnalyzer.cs" />
     <Compile Include="Analyzers\ExplicitThisFixer.cs" />
+    <Compile Include="Extensions.cs" />
     <Compile Include="Filters\FilenameFilter.cs" />
     <Compile Include="Filters\UsableFileFilter.cs" />
+    <Compile Include="FormattingConstants.cs" />
     <Compile Include="FormattingEngine.cs" />
     <Compile Include="FormattingEngineImplementation.cs" />
     <Compile Include="IFormatLogger.cs" />
     <Compile Include="IFormattingEngine.cs" />
     <Compile Include="IFormattingFilter.cs" />
     <Compile Include="IFormattingRule.cs" />
-    <Compile Include="Filters\IgnoreDesignerGeneratedCodeFilter.cs" />
+    <Compile Include="Filters\IgnoreGeneratedFilesFilter.cs" />
     <Compile Include="Options.cs" />
     <Compile Include="RuleOrderAttribute.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
@@ -110,11 +112,9 @@
     <Compile Include="Rules\HasNoCustomCopyrightHeaderFormattingRule.cs" />
     <Compile Include="Rules\PrivateFieldNamingRule.cs" />
     <Compile Include="Rules\HasUsingsOutsideOfNamespaceFormattingRule.cs" />
-    <Compile Include="Rules\IsFormattedFormattingRule.cs" />
-    <Compile Include="Rules\IsSimplifiedFormattingRule.cs" />
+    <Compile Include="Rules\FormatDocumentFormattingRule.cs" />
     <Compile Include="Rules\NonAsciiCharactersAreEscapedInLiteralsRule.cs" />
     <Compile Include="Rules\ExplicitThisRule.cs" />
-    <Compile Include="Rules\RuleExtensions.cs" />
     <Compile Include="Rules\RuleOrder.cs" />
     <Compile Include="Rules\UsesXunitForTestsFormattingRule.cs" />
     <Compile Include="RuleTypeConstants.cs" />
