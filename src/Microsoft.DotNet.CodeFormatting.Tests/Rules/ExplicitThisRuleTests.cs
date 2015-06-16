@@ -163,5 +163,75 @@ class C1
 ";
             Verify(text, expected, runFormatter: false);
         }
+
+        [Fact]
+        public void TestFieldNameSameAsParameterName()
+        {
+            var text = @"
+class C1
+{
+    int field;
+
+    public C1(int field)
+    {
+        // Can't remove this because it changes the semantics (results in
+        // self-assignment).
+        this.field = field;
+    }
+}
+";
+
+            var expected = @"
+class C1
+{
+    int field;
+
+    public C1(int field)
+    {
+        // Can't remove this because it changes the semantics (results in
+        // self-assignment).
+        this.field = field;
+    }
+}
+";
+            Verify(text, expected, runFormatter: false);
+        }
+
+        [Fact]
+        public void TestFieldNameSameAsLocalName()
+        {
+            var text = @"
+class C1
+{
+    int field;
+
+    public void M()
+    {
+        int field = 2;
+
+        // Can't remove this because it changes the semantics (modifies local
+        // instead of field).
+        ++this.field;
+    }
+}
+";
+
+            var expected = @"
+class C1
+{
+    int field;
+
+    public void M()
+    {
+        int field = 2;
+
+        // Can't remove this because it changes the semantics (modifies local
+        // instead of field).
+        ++this.field;
+    }
+}
+";
+            Verify(text, expected, runFormatter: false);
+        }
     }
 }
