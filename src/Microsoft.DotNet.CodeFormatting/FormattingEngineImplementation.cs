@@ -122,15 +122,18 @@ namespace Microsoft.DotNet.CodeFormatting
                                               FixAllScope.Project, 
                                               null, 
                                               diagnostics.Select(d=>d.Id),
-                                              (projcet, doc, dids, ct) =>
+                                              (proj, doc, dids, ct) =>
                                               {
                                                   return Task.FromResult(diagnostics.Where(d => d.Location.SourceTree.FilePath == doc.FilePath));
                                               },
                                               cancellationToken);
             var fix = await batchFixer.GetFixAsync(context);
-            foreach (var operation in await fix.GetOperationsAsync(cancellationToken))
+            if (fix != null)
             {
-                operation.Apply(project.Solution.Workspace, cancellationToken);
+                foreach (var operation in await fix.GetOperationsAsync(cancellationToken))
+                {
+                    operation.Apply(project.Solution.Workspace, cancellationToken);
+                }
             }
 
             watch.Stop();
