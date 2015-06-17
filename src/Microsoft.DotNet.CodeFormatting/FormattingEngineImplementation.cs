@@ -1,24 +1,18 @@
 // Copyright (c) Microsoft. All rights reserved.
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 
-using System;
 using System.Collections.Generic;
 using System.Collections.Immutable;
 using System.Composition;
 using System.Diagnostics;
-using System.IO;
 using System.Linq;
-using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.Diagnostics;
-using Microsoft.CodeAnalysis.Text;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.CodeFixes;
-using Microsoft.CodeAnalysis.CodeActions;
-using System.Reflection;
 
 namespace Microsoft.DotNet.CodeFormatting
 {
@@ -98,12 +92,10 @@ namespace Microsoft.DotNet.CodeFormatting
             FixAllScope scope,
             string codeActionId,
             IEnumerable<string> diagnosticIds,
-            Func<Project, Document, ImmutableHashSet<string>, CancellationToken, Task<IEnumerable<Diagnostic>>> getDocumentDiagnosticsAsync,
+            FixAllContext.DiagnosticProvider diagnosticProvider,
             CancellationToken cancellationToken)
         {
-            var ctor = typeof(FixAllContext).GetConstructors(BindingFlags.Instance | BindingFlags.NonPublic)[0];
-
-            return (FixAllContext) ctor.Invoke(new object[] { project.Documents.First(), codeFixProvider, scope, codeActionId, diagnosticIds, getDocumentDiagnosticsAsync, cancellationToken});
+            return new FixAllContext(project.Documents.First(), codeFixProvider, scope, codeActionId, diagnosticIds, diagnosticProvider, cancellationToken);
         }
 
         public async Task FormatProjectAsync(Project project, CancellationToken cancellationToken)
@@ -122,10 +114,7 @@ namespace Microsoft.DotNet.CodeFormatting
                                               FixAllScope.Project, 
                                               null, 
                                               diagnostics.Select(d=>d.Id),
-                                              (proj, doc, dids, ct) =>
-                                              {
-                                                  return Task.FromResult(diagnostics.Where(d => d.Location.SourceTree.FilePath == doc.FilePath));
-                                              },
+                                              new FormattingEngineDiagnosticProvider(project, diagnostics),
                                               cancellationToken);
             var fix = await batchFixer.GetFixAsync(context);
             if (fix != null)
@@ -214,6 +203,38 @@ namespace Microsoft.DotNet.CodeFormatting
         {
             _watch.Stop();
             FormatLogger.WriteLine("    {0} {1} seconds", document.Name, _watch.Elapsed.TotalSeconds);
+        }
+
+        private class FormattingEngineDiagnosticProvider : FixAllContext.DiagnosticProvider
+        {
+            private readonly Project _project;
+            private List<Diagnostic> _allDiagnostics;
+
+            public FormattingEngineDiagnosticProvider(Project project, IEnumerable<Diagnostic> diagnostics)
+            {
+                _project = project;
+                _allDiagnostics = new List<Diagnostic>(diagnostics);
+            }
+
+            public override Task<IEnumerable<Diagnostic>> GetAllDiagnosticsAsync(Project project, CancellationToken cancellationToken)
+            {
+                if (project == _project)
+                {
+                    return Task.FromResult(_allDiagnostics.Where(d => true));
+                }
+
+                return Task.FromResult(Enumerable.Empty<Diagnostic>());
+            }
+
+            public override Task<IEnumerable<Diagnostic>> GetDocumentDiagnosticsAsync(Document document, CancellationToken cancellationToken)
+            {
+                return Task.FromResult(_allDiagnostics.Where(d => d.Location.SourceTree.FilePath == document.FilePath));
+            }
+
+            public override Task<IEnumerable<Diagnostic>> GetProjectDiagnosticsAsync(Project project, CancellationToken cancellationToken)
+            {
+                return Task.FromResult(_allDiagnostics.Where(d => d.Location == Location.None));
+            }
         }
     }
 }
