@@ -13,7 +13,7 @@ namespace Microsoft.DotNet.CodeFormatting.Tests
     /// <summary>
     /// A test which runs all rules on a given piece of code 
     /// </summary>
-    public sealed class CombinationTest : CodeFormattingTestBase
+    public sealed class CombinationTest : RuleTestBase
     {
         private static FormattingEngineImplementation s_formattingEngine;
 
