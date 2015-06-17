@@ -19,8 +19,6 @@ namespace Microsoft.DotNet.CodeFormatting
     [Export(typeof(IFormattingEngine))]
     internal sealed class FormattingEngineImplementation : IFormattingEngine
     {
-        internal const string TablePreprocessorSymbolName = "DOTNET_FORMATTER";
-
         private readonly Options _options;
         private readonly IEnumerable<IFormattingFilter> _filters;
         private readonly IEnumerable<DiagnosticAnalyzer> _analyzers;
@@ -86,36 +84,24 @@ namespace Microsoft.DotNet.CodeFormatting
             }
         }
 
-        private FixAllContext CreateFixAllContext(
-            Project project,
-            CodeFixProvider codeFixProvider,
-            FixAllScope scope,
-            string codeActionId,
-            IEnumerable<string> diagnosticIds,
-            FixAllContext.DiagnosticProvider diagnosticProvider,
-            CancellationToken cancellationToken)
-        {
-            return new FixAllContext(project.Documents.First(), codeFixProvider, scope, codeActionId, diagnosticIds, diagnosticProvider, cancellationToken);
-        }
-
         public async Task FormatProjectAsync(Project project, CancellationToken cancellationToken)
         {
             var watch = new Stopwatch();
             watch.Start();
 
-            var solution = AddTablePreprocessorSymbol(project.Solution);
-            project = solution.GetProject(project.Id);
             var diagnostics = await GetDiagnostics(project, cancellationToken);
 
             var batchFixer = WellKnownFixAllProviders.BatchFixer;
 
-            var context = CreateFixAllContext(project,
-                                              new UberCodeFixer(_fixerMap),
-                                              FixAllScope.Project, 
-                                              null, 
-                                              diagnostics.Select(d=>d.Id),
-                                              new FormattingEngineDiagnosticProvider(project, diagnostics),
-                                              cancellationToken);
+            var context = new FixAllContext(
+                project.Documents.First(),
+                new UberCodeFixer(_fixerMap),
+                FixAllScope.Project, 
+                null, 
+                diagnostics.Select(d=>d.Id),
+                new FormattingEngineDiagnosticProvider(project, diagnostics),
+                cancellationToken);
+
             var fix = await batchFixer.GetFixAsync(context);
             if (fix != null)
             {
@@ -160,26 +146,6 @@ namespace Microsoft.DotNet.CodeFormatting
             var compilation = await project.GetCompilationAsync(cancellationToken);
             var compilationWithAnalyzers = compilation.WithAnalyzers(_analyzers.ToImmutableArray());
             return await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync();
-        }
-
-        internal Solution AddTablePreprocessorSymbol(Solution solution)
-        {
-            var projectIds = solution.ProjectIds;
-            foreach (var projectId in projectIds)
-            {
-                var project = solution.GetProject(projectId);
-                var parseOptions = project.ParseOptions as CSharpParseOptions;
-                if (parseOptions != null)
-                {
-                    var list = new List<string>();
-                    list.AddRange(parseOptions.PreprocessorSymbolNames);
-                    list.Add(TablePreprocessorSymbolName);
-                    parseOptions = parseOptions.WithPreprocessorSymbols(list);
-                    solution = project.WithParseOptions(parseOptions).Solution;
-                }
-            }
-
-            return solution;
         }
 
         private bool ShouldBeProcessed(Document document)
