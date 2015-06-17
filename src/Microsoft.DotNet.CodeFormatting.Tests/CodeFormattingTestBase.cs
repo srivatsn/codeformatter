@@ -104,7 +104,7 @@ namespace Microsoft.DotNet.CodeFormatting.Tests
                 document = await RewriteDocumentAsync(document);
                 if (runFormatter)
                 {
-                    document = await Formatter.FormatAsync(document);
+                    document = await Formatter.FormatAsync(document).ConfigureAwait(false);
                 }
 
                 solution = document.Project.Solution;
