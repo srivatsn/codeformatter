@@ -33,7 +33,7 @@ namespace Microsoft.DotNet.CodeFormatting.Analyzers
                 if (node != null)
                 {
                     if (node.Expression != null &&
-                        node.Expression.CSharpKind() == SyntaxKind.ThisExpression &&
+                        node.Expression.Kind() == SyntaxKind.ThisExpression &&
                         IsPrivateField(node, syntaxContext.SemanticModel, syntaxContext.CancellationToken))
                     {
                         syntaxContext.ReportDiagnostic(Diagnostic.Create(rule, node.GetLocation()));

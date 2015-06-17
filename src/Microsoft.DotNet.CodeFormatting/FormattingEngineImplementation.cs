@@ -74,7 +74,7 @@ namespace Microsoft.DotNet.CodeFormatting
 
             foreach (var fixer in _fixers)
             {
-                var supportedDiagnosticIds = fixer.GetFixableDiagnosticIds();
+                var supportedDiagnosticIds = fixer.FixableDiagnosticIds;
 
                 foreach (var id in supportedDiagnosticIds)
                 {
@@ -149,12 +149,12 @@ namespace Microsoft.DotNet.CodeFormatting
                 _fixerMap = fixerMap;
             }
 
-            public override async Task ComputeFixesAsync(CodeFixContext context)
+            public override async Task RegisterCodeFixesAsync(CodeFixContext context)
             {
                 foreach (var diagnostic in context.Diagnostics)
                 {
                     var fixer = _fixerMap[diagnostic.Id];
-                    await fixer.ComputeFixesAsync(new CodeFixContext(context.Document, diagnostic, (a, d) => context.RegisterFix(a, d), context.CancellationToken));
+                    await fixer.RegisterCodeFixesAsync(new CodeFixContext(context.Document, diagnostic, (a, d) => context.RegisterCodeFix(a, d), context.CancellationToken));
                 }
             }
 
@@ -163,18 +163,14 @@ namespace Microsoft.DotNet.CodeFormatting
                 return null;
             }
 
-            public override ImmutableArray<string> GetFixableDiagnosticIds()
-            {
-                return ImmutableArray<string>.Empty;
-            }
+            public override ImmutableArray<string> FixableDiagnosticIds => ImmutableArray<string>.Empty;
         }
 
         private async Task<ImmutableArray<Diagnostic>> GetDiagnostics(Project project, CancellationToken cancellationToken)
         {
             var compilation = await project.GetCompilationAsync(cancellationToken);
-            var driver = AnalyzerDriver.Create(compilation, _analyzers.ToImmutableArray(), null, out compilation, cancellationToken);
-            compilation.GetDiagnostics(cancellationToken);
-            return await driver.GetDiagnosticsAsync();
+            var compilationWithAnalyzers = compilation.WithAnalyzers(_analyzers.ToImmutableArray());
+            return await compilationWithAnalyzers.GetAnalyzerDiagnosticsAsync();
         }
 
         internal Solution AddTablePreprocessorSymbol(Solution solution)

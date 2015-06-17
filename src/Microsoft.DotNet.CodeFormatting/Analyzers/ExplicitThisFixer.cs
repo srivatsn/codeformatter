@@ -1,9 +1,6 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Collections.Immutable;
+﻿using System.Collections.Immutable;
 using System.Diagnostics;
 using System.Linq;
-using System.Text;
 using System.Threading.Tasks;
 using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CodeActions;
@@ -16,15 +13,24 @@ namespace Microsoft.DotNet.CodeFormatting.Analyzers
     [ExportCodeFixProvider(LanguageNames.CSharp)]
     public class ExplicitThisFixer : CodeFixProvider
     {
-        public override async Task ComputeFixesAsync(CodeFixContext context)
+        public override async Task RegisterCodeFixesAsync(CodeFixContext context)
         {
             var root = await context.Document.GetSyntaxRootAsync(context.CancellationToken);
             var memberAccessNode = root.FindNode(context.Span);
 
             Debug.Assert(memberAccessNode is MemberAccessExpressionSyntax);
 
-            var newDocument = context.Document.WithSyntaxRoot(root.ReplaceNode(memberAccessNode, memberAccessNode.WithAdditionalAnnotations(Simplifier.Annotation)));
-            context.RegisterFix(CodeAction.Create("Remove 'this' qualifier", newDocument), context.Diagnostics.First());
+            context.RegisterCodeFix(
+                CodeAction.Create(
+                    "Remove 'this' qualifier",
+                    c => RemoveThisQualifier(context.Document, root, memberAccessNode)),
+                context.Diagnostics.First());
+        }
+
+        private Task<Document> RemoveThisQualifier(Document document, SyntaxNode root, SyntaxNode memberAccessNode)
+        {
+            return Task.FromResult(
+                document.WithSyntaxRoot(root.ReplaceNode(memberAccessNode, memberAccessNode.WithAdditionalAnnotations(Simplifier.Annotation))));
         }
 
         public override FixAllProvider GetFixAllProvider()
@@ -32,9 +38,7 @@ namespace Microsoft.DotNet.CodeFormatting.Analyzers
             return WellKnownFixAllProviders.BatchFixer;
         }
 
-        public override ImmutableArray<string> GetFixableDiagnosticIds()
-        {
-            return ImmutableArray.Create("DNS0001");
-        }
+        public override ImmutableArray<string> FixableDiagnosticIds
+            => ImmutableArray.Create("DNS0001");
     }
 }

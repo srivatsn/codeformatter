@@ -194,8 +194,8 @@ namespace System.Composition.UnitTests
             Verify(text, expected);
         }
 
-        private static readonly MetadataReference s_MSTestReference = MetadataReference.CreateFromAssembly(typeof(VisualStudio.TestTools.UnitTesting.TestMethodAttribute).Assembly);
-        private static readonly MetadataReference s_XunitReference = MetadataReference.CreateFromAssembly(typeof(FactAttribute).Assembly);
+        private static readonly MetadataReference s_MSTestReference = MetadataReference.CreateFromFile(typeof(VisualStudio.TestTools.UnitTesting.TestMethodAttribute).Assembly.Location);
+        private static readonly MetadataReference s_XunitReference = MetadataReference.CreateFromFile(typeof(FactAttribute).Assembly.Location);
 
         protected override IEnumerable<MetadataReference> GetSolutionMetadataReferences()
         {

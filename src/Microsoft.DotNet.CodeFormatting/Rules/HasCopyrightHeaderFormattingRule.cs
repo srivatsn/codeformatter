@@ -39,7 +39,7 @@ namespace Microsoft.DotNet.CodeFormatting.Rules
 
         private bool HasCopyrightHeader(SyntaxNode syntaxNode)
         {
-            var leadingComments = syntaxNode.GetLeadingTrivia().Where(t => t.CSharpKind() == SyntaxKind.SingleLineCommentTrivia).ToArray();
+            var leadingComments = syntaxNode.GetLeadingTrivia().Where(t => t.Kind() == SyntaxKind.SingleLineCommentTrivia).ToArray();
             var header = _options.CopyrightHeader;
             if (leadingComments.Length < header.Length)
                 return false;
